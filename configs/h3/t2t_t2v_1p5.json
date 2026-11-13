@@ -1,0 +1,58 @@
+{
+ "attention_backend": "t2t_attn",
+ "attention_backend_config": {
+  "t2t_cfg_reuse": false,
+  "t2t_ck": 2048,
+  "t2t_cq": "auto",
+  "t2t_dense_prefix_steps": 12,
+  "t2t_h3_s_frac": 0.015,
+  "t2t_h3_video_tokens": 0,
+  "t2t_layer_profile": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "t2t_mask_refresh": 4,
+  "t2t_step_profile": [
+   2.0413793103448277,
+   1.0206896551724138,
+   0.25517241379310346,
+   0.25517241379310346
+  ],
+  "t2t_use_kmm": false,
+  "t2t_warm_iters": 4,
+  "t2t_batched_whitening": true,
+  "t2t_persist_state": false,
+  "t2t_fast_init": true
+ },
+ "audio_flow_shift": 3.0,
+ "backend": "sglang",
+ "component_attention_backends": "text_encoder=torch_sdpa,audio_vae=fa,video_vae=fa",
+ "conditions": [],
+ "enable_torch_compile": false,
+ "flow_shift": 12.0,
+ "model_id": "MiniMax-H3",
+ "model_path": "MiniMaxAI/MiniMax-H3",
+ "model_variant": "fl2va",
+ "num_gpus": 8,
+ "num_inference_steps": 50,
+ "performance_mode": "speed",
+ "quality": "lossless",
+ "ring_degree": 1,
+ "save_output": true,
+ "target": {
+  "aspect_ratio": "16:9",
+  "duration_seconds": 10.0,
+  "short_edge": 768
+ },
+ "task": "t2va",
+ "tp_size": 1,
+ "ulysses_degree": 8,
+ "enable_cfg_parallel": false,
+ "cfg_parallel_degree": 1,
+ "warmup_mode": "request",
+ "warmup_steps": 14
+}

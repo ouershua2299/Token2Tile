@@ -1,0 +1,7 @@
+{
+ "arm": "h3_t2v_dense",
+ "config": "configs/h3/dense.json",
+ "cells": [
+  {"name": "lion_s0", "prompt": "a lion is roaring in the wild", "seed": 0, "output": "runs/h3_t2v_dense/lion_s0"}
+ ]
+}

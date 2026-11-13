@@ -1,0 +1,166 @@
+diff --git a/python/sglang/multimodal_gen/runtime/models/dits/base.py b/python/sglang/multimodal_gen/runtime/models/dits/base.py
+index 849a05ce2..e893b6c57 100644
+--- a/python/sglang/multimodal_gen/runtime/models/dits/base.py
++++ b/python/sglang/multimodal_gen/runtime/models/dits/base.py
+@@ -46,6 +46,7 @@ class BaseDiT(nn.Module, ABC):
+         AttentionBackendEnum.TORCH_SDPA,
+         AttentionBackendEnum.VIDEO_SPARSE_ATTN,
+         AttentionBackendEnum.SPARSE_VIDEO_GEN_2_ATTN,
++        AttentionBackendEnum.T2T_ATTN,
+         AttentionBackendEnum.VMOBA_ATTN,
+         AttentionBackendEnum.SAGE_ATTN_3,
+         AttentionBackendEnum.LASER_ATTN,
+diff --git a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py
+index 1de3f0287..9457cb088 100644
+--- a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py
++++ b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py
+@@ -1991,6 +1991,31 @@ class MiniMaxH3DiTModel(BaseDiT, LayerwiseOffloadableModuleMixin):
+                     dtype=torch.long,
+                 ),
+             )
++        # Publish the packed modality layout (row ranges of video / audio /
++        # text) on the forward context so sparse attention backends (Token2Tile) can derive the video segment per request instead of
++        # relying on a per-duration config constant.
++        try:
++            from sglang.multimodal_gen.runtime.managers.forward_context import (
++                get_forward_context as _t2t_gfc,
++            )
++
++            _fc = _t2t_gfc()
++            _img_cpu = img_pos.detach().to("cpu")
++            _audio_cpu = audio_pos.detach().to("cpu")
++            # Generated-video rows after the last audio row.  For fl2va the
++            # keyframe condition rows sit between text and audio, so the
++            # target video is this contiguous tail, not the whole img_pos.
++            _tail_from = int(_audio_cpu.max()) + 1 if _audio_cpu.numel() else 0
++            _fc.minimax_h3_layout = {
++                "video_tail": int((_img_cpu >= _tail_from).sum()),
++                "video": int(_img_cpu.numel()),
++                "video_start": int(_img_cpu.min()) if _img_cpu.numel() else -1,
++                "video_stop": int(_img_cpu.max()) + 1 if _img_cpu.numel() else -1,
++                "audio": int(audio_pos.numel()),
++                "text_rows": int(text_pos.numel()),
++            }
++        except AssertionError:
++            pass  # no forward context (direct model callers)
+         img_pos = img_pos.to(device)
+         audio_pos = audio_pos.to(device)
+         text_pos = text_pos.to(device)
+diff --git a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/denoising.py b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/denoising.py
+index 76c66125b..06d6bac55 100644
+--- a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/denoising.py
++++ b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/denoising.py
+@@ -2053,6 +2053,36 @@ class DenoisingStage(PipelineStage, RolloutDenoisingMixin):
+                 cache=cache,
+                 calculate_density=False,  # only need density when doing head load balancing
+             )
++        elif self.attn_backend.get_enum() == AttentionBackendEnum.T2T_ATTN:
++            if timesteps is None:
++                raise ValueError("timesteps must be provided for Token2Tile metadata")
++            t2t_cfg = server_args.attention_backend_config or {}
++            cache = batch.extra.get("t2t_cache")
++            if cache is None:
++                from sglang.multimodal_gen.runtime.layers.attention.backends.t2t_attn import (
++                    T2TRequestCache,
++                )
++
++                cache = T2TRequestCache()
++                batch.extra["t2t_cache"] = cache
++            attn_metadata = self.attn_metadata_builder.build(
++                step_index=i,
++                total_steps=len(timesteps),
++                profile_name=t2t_cfg.get("t2t_profile", "auto"),
++                ns_base=t2t_cfg.get("t2t_ns_base"),
++                dense_prefix_steps=t2t_cfg.get("t2t_dense_prefix_steps"),
++                cq=t2t_cfg.get("t2t_cq"),
++                ck=t2t_cfg.get("t2t_ck"),
++                step_profile=t2t_cfg.get("t2t_step_profile"),
++                layer_profile=t2t_cfg.get("t2t_layer_profile"),
++                cfg_mult=t2t_cfg.get("t2t_cfg_mult"),
++                ns_table=t2t_cfg.get("t2t_ns_table"),
++                warm_iters=t2t_cfg.get("t2t_warm_iters", 4),
++                mask_refresh=t2t_cfg.get("t2t_mask_refresh", 4),
++                cfg_reuse=t2t_cfg.get("t2t_cfg_reuse", True),
++                use_kmm=t2t_cfg.get("t2t_use_kmm", True),
++                cache=cache,
++            )
+         elif self.attn_backend.get_enum() == AttentionBackendEnum.VMOBA_ATTN:
+             moba_params = server_args.attention_backend_config.moba_config.copy()
+             moba_params.update(
+diff --git a/python/sglang/multimodal_gen/runtime/platforms/cuda.py b/python/sglang/multimodal_gen/runtime/platforms/cuda.py
+index 1c4bc869f..7b7e932fa 100644
+--- a/python/sglang/multimodal_gen/runtime/platforms/cuda.py
++++ b/python/sglang/multimodal_gen/runtime/platforms/cuda.py
+@@ -276,6 +276,25 @@ class _SolAttnBackendResolver(_CudaAttentionBackendResolver):
+             ) from e
+ 
+ 
++class _T2TAttentionBackendResolver(_CudaAttentionBackendResolver):
++    backend = AttentionBackendEnum.T2T_ATTN
++
++    @classmethod
++    def resolve(cls, platform) -> str:
++        capability = platform.get_device_capability()
++        if capability is None or tuple(capability) != (9, 0):
++            found = capability.as_version_str() if capability else "unknown"
++            raise ValueError(
++                "Token2Tile kernels require SM90a (H100/H200); "
++                f"this device reports {found}."
++            )
++        from sglang.multimodal_gen.runtime.layers.attention.backends.t2t_attn import (  # noqa: F401
++            T2TAttentionBackend,
++        )
++
++        return "sglang.multimodal_gen.runtime.layers.attention.backends.t2t_attn.T2TAttentionBackend"
++
++
+ class _VMOBAAttentionBackendResolver(_CudaAttentionBackendResolver):
+     backend = AttentionBackendEnum.VMOBA_ATTN
+ 
+@@ -372,6 +391,7 @@ _CUDA_ATTENTION_BACKEND_RESOLVERS = {
+         _VideoSparseAttentionBackendResolver,
+         _SparseVideoGen2AttentionBackendResolver,
+         _SolAttnBackendResolver,
++        _T2TAttentionBackendResolver,
+         _VMOBAAttentionBackendResolver,
+         _SubBlockSparseAttentionBackendResolver,
+         _FlashAttention2BackendResolver,
+diff --git a/python/sglang/multimodal_gen/runtime/platforms/interface.py b/python/sglang/multimodal_gen/runtime/platforms/interface.py
+index a62478f98..51a9586ef 100644
+--- a/python/sglang/multimodal_gen/runtime/platforms/interface.py
++++ b/python/sglang/multimodal_gen/runtime/platforms/interface.py
+@@ -35,6 +35,7 @@ class AttentionBackendEnum(enum.Enum):
+     SAGE_ATTN_3 = enum.auto()
+     VIDEO_SPARSE_ATTN = enum.auto()
+     SPARSE_VIDEO_GEN_2_ATTN = enum.auto()
++    T2T_ATTN = enum.auto()
+     VMOBA_ATTN = enum.auto()
+     AITER = enum.auto()
+     AITER_SAGE = enum.auto()
+@@ -56,6 +57,7 @@ class AttentionBackendEnum(enum.Enum):
+             AttentionBackendEnum.SLIDING_TILE_ATTN,
+             AttentionBackendEnum.VIDEO_SPARSE_ATTN,
+             AttentionBackendEnum.SPARSE_VIDEO_GEN_2_ATTN,
++            AttentionBackendEnum.T2T_ATTN,
+             AttentionBackendEnum.VMOBA_ATTN,
+             AttentionBackendEnum.SLA_ATTN,
+             AttentionBackendEnum.SAGE_SLA_ATTN,
+diff --git a/python/sglang/multimodal_gen/runtime/server_args/server_args.py b/python/sglang/multimodal_gen/runtime/server_args/server_args.py
+index f983f7455..c8c966331 100644
+--- a/python/sglang/multimodal_gen/runtime/server_args/server_args.py
++++ b/python/sglang/multimodal_gen/runtime/server_args/server_args.py
+@@ -904,6 +904,14 @@ class ServerArgs(DisaggServerArgsMixin):
+             self.attention_backend_config = addict.Dict(
+                 self._parse_attention_backend_config(self.attention_backend_config)
+             )
++        elif not isinstance(self.attention_backend_config, addict.Dict):
++            # Config files deserialize nested objects as plain dicts, while
++            # downstream request preparation also uses optional attribute
++            # access (for example ``.VSA_sparsity``). Normalize both CLI and
++            # file-based configuration paths to the declared runtime type.
++            self.attention_backend_config = addict.Dict(
++                self.attention_backend_config
++            )
+ 
+         if self.backend != Backend.DIFFUSERS and isinstance(
+             self.pipeline_config, LTX2PipelineConfig

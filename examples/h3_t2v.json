@@ -1,0 +1,7 @@
+{
+ "arm": "h3_t2v_t2t_1p5",
+ "config": "configs/h3/t2t_t2v_1p5.json",
+ "cells": [
+  {"name": "lion_s0", "prompt": "a lion is roaring in the wild", "seed": 0, "output": "runs/h3_t2v_t2t_1p5/lion_s0"}
+ ]
+}

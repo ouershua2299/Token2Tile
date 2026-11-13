@@ -1,0 +1,14 @@
+{
+ "arm": "h3_i2v_t2t_1p25",
+ "config": "configs/h3/t2t_i2v_1p25.json",
+ "cells": [
+  {
+   "name": "boats_s0", "prompt": "a couple of boats floating on a body of water", "seed": 0,
+   "request_overrides": {
+    "task": "fl2va",
+    "conditions": [{"type": "image", "uri": "path/to/first_frame.jpg", "role": "keyframe", "frame_index": 0}]
+   },
+   "output": "runs/h3_i2v_t2t_1p25/boats_s0"
+  }
+ ]
+}

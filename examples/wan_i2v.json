@@ -1,0 +1,11 @@
+{
+ "arm": "wan_i2v_t2t_2p5",
+ "config": "configs/wan/i2v_t2t_2p5.json",
+ "cells": [
+  {
+   "name": "boats_s0", "prompt": "a couple of boats floating on a body of water", "seed": 0,
+   "request_overrides": {"image_path": "path/to/first_frame.jpg"},
+   "output": "runs/wan_i2v_t2t_2p5/boats_s0"
+  }
+ ]
+}
