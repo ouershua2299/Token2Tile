@@ -77,11 +77,12 @@ part of this repository:
 | `wan/i2v_t2t_2p5.json` | 5.0 / 2.5 / 0.75 / 1.0 |
 | `wan/{t2v,i2v}_t2t_5.json` | 7.5 / 5.0 / 2.5 / 5.0 |
 
-**Window boundaries.** The backend applies the four multipliers to denoising steps 13-21, 22-31, 32-41 and 42 to
-the end (1-based, after the 12 dense steps). The calibration weighted the windows as 12, 8, 12 and 5-6 steps, so
-the budget averaged over the sparse steps is slightly below the nominal one: 1.34% for the 1.5% H3 config, 1.18%
-for 1.25%, 2.23-2.28% for the 2.5% Wan configs, 4.93% for the 5% Wan configs and 4.48% for the 5% H3 config. The names of the configs and the
-budgets quoted with the results are the nominal values.
+**Window boundaries.** The backend switches multipliers at denoising steps 22, 32 and 42 (1-based), and a budget
+takes effect when the structure is rebuilt, because reuse calls keep the selection of the last rebuild. With the
+shipped settings (12 dense steps, R = 4) rebuilds fall on steps 13, 17, 21, 25, ..., so the four multipliers are in
+effect for steps 13-24, 25-32, 33-44 and 45 to the end, the windows of the paper (12, 8, 12 and 5-6 steps), and the
+budget averaged over the sparse steps equals the nominal one. With a different R or dense prefix the effective
+windows shift accordingly.
 
 ## Request settings
 

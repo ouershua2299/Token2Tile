@@ -559,6 +559,8 @@ def _resolve_profile(
 
 
 def _step_window(step: int) -> int:
+    # Thresholds for a 50-step schedule. The budget is read only on rebuild calls, so with a 12-step dense
+    # prefix and R = 4 the windows in effect are steps 12-23, 24-31, 32-43, 44-end (0-based).
     if step < 21:
         return 0
     if step < 31:
