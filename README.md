@@ -1,23 +1,75 @@
-# Token2Tile
+<h1 align="center">Token2Tile</h1>
 
-**Token-Wise Sparse Attention with Tile Execution through a Low-Rank Space for Video DiTs**
+<p align="center">
+  <b>Token-Wise Sparse Attention with Tile Execution<br>through a Low-Rank Space for Video DiTs</b>
+</p>
 
-Token2Tile is a training-free sparse attention operator for video diffusion transformers. Sparse attention is most
-accurate when every query chooses its own keys, but GPU kernels are fast on tiles. Token2Tile keeps both:
+<p align="center">
+  Xuecheng Wu<sup>1,2</sup>&nbsp;&nbsp; Aichen Feng<sup>2</sup>&nbsp;&nbsp; Jinyan Chen<sup>2</sup>&nbsp;&nbsp; Qingjie Zhao<sup>1</sup>&nbsp;&nbsp; Julien Lai<sup>2</sup><br>
+  <sup>1</sup>Beijing Institute of Technology&nbsp;&nbsp;&nbsp; <sup>2</sup>NVIDIA
+</p>
+
+<p align="center">
+  <b>Paper</b> (arXiv link coming soon) &nbsp;·&nbsp;
+  <a href="#quick-start"><b>Quick start</b></a> &nbsp;·&nbsp;
+  <a href="docs/configuration.md"><b>Configuration</b></a> &nbsp;·&nbsp;
+  <a href="token2tile/operator/README.md"><b>Operator</b></a> &nbsp;·&nbsp;
+  <a href="#citation"><b>Citation</b></a>
+</p>
+
+<p align="center">
+  <img src="assets/teaser.jpg" alt="Token2Tile: higher fidelity at comparable end-to-end speed" width="100%">
+</p>
+
+Token2Tile is a **training-free sparse attention operator** for video diffusion transformers. It gives a
+**1.48-1.54x end-to-end speedup** over dense FlashAttention-3 on MiniMax-H3 and Wan2.1-14B, and at the same speed
+stays **4.6-6.8 dB closer to the dense video** than block-sparse attention. No training, no model change.
+
+## Why it works
+
+Sparse attention is most accurate when every query chooses its own keys, but GPU kernels are fast on tiles.
+Token2Tile keeps both:
+
+<p align="center">
+  <img src="assets/method.png" alt="Token2Tile method overview" width="100%">
+</p>
 
 - **Per-query scoring.** Queries and keys are projected into one online rank-32 space fitted to preserve the
-  attention logits. Keys are clustered there, and every query scores the key clusters with its own vector and keeps
-  the best ones up to a token budget.
+  attention logits. Keys are clustered there; every query scores the key clusters with its own vector and keeps the
+  best ones up to a token budget.
 - **Per-query residual.** Clusters a query does not select still contribute through their centroid and value sum,
   merged with the exact part under one softmax.
 - **Tile execution.** Queries that score alike are clustered; a query cluster executes the union of its members'
   selections as exact attention packed into GPU tiles.
 
-On MiniMax-H3 and Wan2.1-14B it gives a 1.48-1.54x end-to-end speedup over dense FlashAttention-3 on 8 H200 GPUs,
-with no training or model change.
+## Results
 
-This repository contains the attention operator, its CUDA kernels, and the SGLang-Diffusion integration for Wan2.1
-and MiniMax-H3, with the generation configs of the main results.
+Fidelity to the dense video and request time on 8 H200 GPUs, 50 denoising steps (paper, Table 1).
+
+| Model | Task | Method | PSNR (dB) | SSIM | LPIPS | Time (s) | Speedup |
+|---|---|---|---:|---:|---:|---:|---:|
+| MiniMax-H3 | T2V | Dense FlashAttention-3 | | | | 109.0 | 1.00x |
+| | | SOL | 21.00 | 0.722 | 0.206 | 73.5 | 1.48x |
+| | | SubBlock | 21.55 | 0.741 | 0.190 | 74.1 | 1.47x |
+| | | **Token2Tile 1.5%** | **27.83** | **0.875** | **0.085** | 73.0 | **1.49x** |
+| MiniMax-H3 | I2V | Dense FlashAttention-3 | | | | 114.5 | 1.00x |
+| | | SOL | 24.03 | 0.803 | 0.120 | 77.0 | 1.49x |
+| | | SubBlock | 24.88 | 0.825 | 0.106 | 77.5 | 1.48x |
+| | | **Token2Tile 1.25%** | **30.37** | **0.914** | **0.052** | 77.5 | 1.48x |
+| Wan2.1-14B | T2V | Dense FlashAttention-3 | | | | 136.0 | 1.00x |
+| | | SOL | 22.70 | 0.800 | 0.137 | 96.0 | 1.42x |
+| | | **Token2Tile 2.5%** | **27.48** | **0.899** | **0.064** | 88.4 | **1.54x** |
+| Wan2.1-14B | I2V | Dense FlashAttention-3 | | | | 137.9 | 1.00x |
+| | | SOL | 25.63 | 0.836 | 0.100 | 97.7 | 1.41x |
+| | | **Token2Tile 2.5%** | **30.26** | **0.910** | **0.054** | 90.9 | **1.52x** |
+
+The configs for every Token2Tile row are in [`configs/`](configs). The paper has the full comparison, kernel
+studies and ablations.
+
+## What is in this repository
+
+The attention operator, its CUDA kernels, and the SGLang-Diffusion integration for Wan2.1 and MiniMax-H3, with the
+generation configs of the main results.
 
 ## Requirements
 
@@ -145,7 +197,7 @@ by the next call. See [`token2tile/operator/README.md`](token2tile/operator/READ
 ```bibtex
 @article{wu2026token2tile,
   title  = {Token2Tile: Token-Wise Sparse Attention with Tile Execution through a Low-Rank Space for Video DiTs},
-  author = {Wu, Xuecheng and Feng, Aichen and Chen, Jinyan and Zhao, QingJie and Lai, Julien},
+  author = {Wu, Xuecheng and Feng, Aichen and Chen, Jinyan and Zhao, Qingjie and Lai, Julien},
   year   = {2026}
 }
 ```
