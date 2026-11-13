@@ -72,8 +72,8 @@ part of this repository:
 |---|---|
 | `h3/t2t_t2v_1p5.json` | 3.06 / 1.53 / 0.38 / 0.38 |
 | `h3/t2t_i2v_1p25.json` | 2.0 / 1.0 / 0.75 / 1.0 |
-| `h3/t2t_5.json` (both tasks) | 10.2 / 5.1 / 1.28 / 1.28 |
-| `wan/t2v_t2t_2p5.json` | 5.0 / 2.0 / 1.0 / 1.0 |
+| `h3/t2t_5.json` (both tasks) | 10.21 / 5.10 / 1.28 / 1.28 |
+| `wan/t2v_t2t_2p5.json` | 5.05 / 2.02 / 1.01 / 1.01 |
 | `wan/i2v_t2t_2p5.json` | 5.0 / 2.5 / 0.75 / 1.0 |
 | `wan/{t2v,i2v}_t2t_5.json` | 7.5 / 5.0 / 2.5 / 5.0 |
 
