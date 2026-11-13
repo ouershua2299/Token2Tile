@@ -38,30 +38,6 @@ Token2Tile keeps both:
 - **Tile execution.** Queries that score alike are clustered; a query cluster executes the union of its members'
   selections as exact attention packed into GPU tiles.
 
-## Results
-
-Fidelity to the dense video and request time on 8 H200 GPUs, 50 denoising steps (paper, Table 1).
-
-| Model | Task | Method | PSNR (dB) | SSIM | LPIPS | Time (s) | Speedup |
-|---|---|---|---:|---:|---:|---:|---:|
-| MiniMax-H3 | T2V | Dense FlashAttention-3 | | | | 109.0 | 1.00x |
-| | | SOL | 21.00 | 0.722 | 0.206 | 73.5 | 1.48x |
-| | | SubBlock | 21.55 | 0.741 | 0.190 | 74.1 | 1.47x |
-| | | **Token2Tile 1.5%** | **27.83** | **0.875** | **0.085** | 73.0 | **1.49x** |
-| MiniMax-H3 | I2V | Dense FlashAttention-3 | | | | 114.5 | 1.00x |
-| | | SOL | 24.03 | 0.803 | 0.120 | 77.0 | 1.49x |
-| | | SubBlock | 24.88 | 0.825 | 0.106 | 77.5 | 1.48x |
-| | | **Token2Tile 1.25%** | **30.37** | **0.914** | **0.052** | 77.5 | 1.48x |
-| Wan2.1-14B | T2V | Dense FlashAttention-3 | | | | 136.0 | 1.00x |
-| | | SOL | 22.70 | 0.800 | 0.137 | 96.0 | 1.42x |
-| | | **Token2Tile 2.5%** | **27.48** | **0.899** | **0.064** | 88.4 | **1.54x** |
-| Wan2.1-14B | I2V | Dense FlashAttention-3 | | | | 137.9 | 1.00x |
-| | | SOL | 25.63 | 0.836 | 0.100 | 97.7 | 1.41x |
-| | | **Token2Tile 2.5%** | **30.26** | **0.910** | **0.054** | 90.9 | **1.52x** |
-
-The configs for every Token2Tile row are in [`configs/`](configs). The paper has the full comparison, kernel
-studies and ablations.
-
 ## What is in this repository
 
 The attention operator, its CUDA kernels, and the SGLang-Diffusion integration for Wan2.1 and MiniMax-H3, with the
