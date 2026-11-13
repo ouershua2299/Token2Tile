@@ -30,10 +30,6 @@ stays **4.6-6.8 dB closer to the dense video** than block-sparse attention. No t
 Sparse attention is most accurate when every query chooses its own keys, but GPU kernels are fast on tiles.
 Token2Tile keeps both:
 
-<p align="center">
-  <img src="assets/method.png" alt="Token2Tile method overview" width="100%">
-</p>
-
 - **Per-query scoring.** Queries and keys are projected into one online rank-32 space fitted to preserve the
   attention logits. Keys are clustered there; every query scores the key clusters with its own vector and keeps the
   best ones up to a token budget.
