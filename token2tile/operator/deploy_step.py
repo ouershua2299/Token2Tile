@@ -4,7 +4,7 @@
 
   1. projection        Q -> Q Uq, K -> K Uk into the rank-r space              cuBLAS bmm
   2. clustering        one warm-started k-means update of the key clusters
-                       (C_K = 2048) and the query clusters (C_Q), together
+                       (C_K = 2048) and two of the query clusters (C_Q),
                        with the per-cluster value sums                         kernels/kmeans_maintain
   3. scoring           every query against every key centroid                  cuBLAS bmm
   4. selection         per query, the shortest prefix of whole key clusters
@@ -244,7 +244,7 @@ class MaskedStepDeploy:
     # -- state init ---------------------------------------------------------
     def init_state(self, q, k, *, warm_iters=4, seed=0):
         """Projections and initial centroids of one layer. The projections are
-        kept for the whole request; the centroids warm-start every call."""
+        kept for the whole request; the centroids warm-start every rebuild."""
         N, r = self.N, self.r
         Uq, Uk = online_u(q.float(), k.float(), r)
         Uq = Uq.to(torch.float16).contiguous()
@@ -266,7 +266,7 @@ class MaskedStepDeploy:
                 "cq": cq.contiguous()}
 
     def set_cfg_call(self, parity, key=0, step=0):
-        """Annotate the next step() call.
+        """Annotate the next step() call (drives reuse across steps and CFG branches).
 
         parity: CFG branch within the denoising step (0 = the branch allowed
         to rebuild). key: snapshot slot, one per layer. step: denoising step.

@@ -241,12 +241,12 @@ UNROLLN(AUNROLL)
             if (q == 0) {
                 int row = wRowBase + rg * 16 + (lane >> 2) + s * 8;
                 if (row < N) {
-                    // The pinned H3 suffix is foreign text/audio that must
-                    // live in the reserved final K cluster.  Publish that
-                    // constraint before the unchanged histogram/grouping
-                    // pipeline consumes klab.  The ordinary Q and Wan K
-                    // launches instantiate PIN_TAIL=false, so their hot
-                    // assignment kernel does not carry this branch.
+                    // Pinned trailing keys (context tokens) are forced into
+                    // the reserved last key cluster before the histogram and
+                    // grouping consume klab.  Launches without pinned keys
+                    // instantiate PIN_TAIL=false and do not carry this
+                    // branch.
+                    //
                     if constexpr (PIN_TAIL)
                         bi = (row >= pin_begin) ? pin_label : bi;
                     labh[row] = bi;

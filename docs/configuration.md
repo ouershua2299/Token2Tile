@@ -2,7 +2,7 @@
 
 A config in `configs/` is an SGLang-Diffusion generation config. Token2Tile is selected with
 `"attention_backend": "t2t_attn"` and tuned through `attention_backend_config`. The dense configs use
-`"attention_backend": "fa"` (FlashAttention-3) and are otherwise identical.
+`"attention_backend": "fa"` (FlashAttention-3) and are otherwise identical apart from the warm-up length.
 
 ## Budget
 
@@ -16,11 +16,12 @@ equal groups of DiT layers. Each query keeps the shortest prefix of whole key cl
 | Key | Model | Meaning |
 |---|---|---|
 | `t2t_h3_s_frac` | H3 | Base budget as a fraction of the sequence (0.015 = 1.5%). |
-| `t2t_ns_base` | Wan | Base budget in tokens (1890 = 2.5% of 75,600). |
+| `t2t_ns_base` | Wan | Base budget in tokens (1890 = 2.5% of 75,600). The value is tied to the sequence length; recompute it for another resolution or frame count. |
 | `t2t_step_profile` | both | Four multipliers, one per denoising window. The shipped values are the calibrated schedules of the paper; `[1, 1, 1, 1]` is a uniform schedule. |
-| `t2t_layer_profile` | both | Six multipliers, one per layer group (or one per layer). |
-| `t2t_cfg_mult` | Wan | Two multipliers for the conditional and unconditional branch. |
-| `t2t_profile` | Wan | `"manual"` uses the keys above. |
+| `t2t_layer_profile` | both | Multipliers per layer group: six values (H3 requires six; Wan also accepts one value per layer). All ones in the shipped configs; the paper allocates the budget over denoising windows only. |
+| `t2t_cfg_mult` | Wan | Two multipliers for the conditional and unconditional branch. With R > 1 the unconditional branch reuses the selection of the conditional one, so only the first has an effect. |
+| `t2t_profile` | Wan | `"manual"` (all shipped configs) takes the budget from the keys above, which are then all required. The default `"auto"` selects a built-in profile by head count, sequence length and step count and rejects those keys; the built-in profiles are not the settings of the paper. |
+| `t2t_ns_table` | both | Optional JSON table of per-(window, layer) token budgets that replaces the product above; not used by the shipped configs. |
 
 To change the speed-quality trade-off, scale `t2t_h3_s_frac` or `t2t_ns_base`. A larger budget is slower and closer
 to dense attention.
@@ -38,10 +39,13 @@ to dense attention.
 | Key | Meaning |
 |---|---|
 | `t2t_ck` | Number of key clusters. The kernels require 2048. |
-| `t2t_cq` | Number of query clusters; `"auto"` uses about N/128 (H3), 512 for Wan at 720p. |
-| `t2t_warm_iters` | k-means iterations when a request initialises its centroids (4). Later calls take one warm-started update. |
-| `t2t_fast_init`, `t2t_batched_whitening` | GPU-batched computation of the per-request projections and initial centroids. |
+| `t2t_cq` | Number of query clusters. H3: `"auto"` gives N/128 rounded to a multiple of 4, with N the packed sequence length. Wan: an integer is required; the shipped 720p configs use 512. |
+| `t2t_warm_iters` | k-means iterations when a request initialises its centroids at its first sparse step (4). Every rebuild then takes one warm-started update of the key clusters and two of the query clusters. |
+| `t2t_fast_init` | Computes the projections and initial centroids of a request on the GPU without host synchronisation. |
+| `t2t_batched_whitening` | Without `t2t_fast_init`: computes the projections P_q, P_k of all heads in one batched decomposition instead of a per-head loop. |
 | `t2t_persist_state` | H3: keep projections and centroids across requests of the same shape (off). |
+| `t2t_h3_video_tokens` | H3: number of video tokens in the packed sequence; 0 (shipped) derives it from the layout published by the DiT. |
+| `t2t_sync_init`, `t2t_sync_first_sparse` | H3 diagnostics: host synchronisation around the first sparse step. |
 
 ## MiniMax-H3 context tokens
 
@@ -53,9 +57,9 @@ lets the keyframe rows go through the sparse operator.
 
 **Fixed choices.** The kernels fix the head dimension (128) and the number of key clusters (2048); the low-rank
 space has rank 32. Query clusters hold about 128 queries each: `"auto"` gives roughly N/128 clusters on H3, and Wan
-at 720p uses 512. The first 12 denoising steps stay dense and the structure is rebuilt every 4 steps
-(`t2t_dense_prefix_steps`, `t2t_mask_refresh`); both were chosen in the H3 ablations of the paper and are used
-unchanged on Wan.
+at 720p uses 512. The structure is rebuilt every 4 steps (`t2t_mask_refresh`), the default of the reuse
+ablation in the paper, and the first 12 denoising steps stay dense (`t2t_dense_prefix_steps`). Both are used unchanged
+on Wan. The H3 path has its own defaults for omitted keys; set every key explicitly, as the shipped configs do.
 
 **Step profile.** The four multipliers in `t2t_step_profile` were chosen with an offline calibration that is not
 part of this repository:

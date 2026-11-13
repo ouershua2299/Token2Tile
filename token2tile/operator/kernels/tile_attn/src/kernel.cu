@@ -252,10 +252,10 @@ __device__ __forceinline__ int blk_scan(int v, int *ws, int &total) {
   return x - v + ws[warp];
 }
 
-// Selected-KV lengths, one warp per query cluster.  This used to be a serial
-// per-thread popcount-gather inside plan_kernel, which ran on only H blocks and
-// also forced an 8 KB cluster-size scratch array into that block.  Spreading it
-// over H*CQ warps removes both.
+// Selected-KV lengths, one warp per query cluster.  Spreading this over
+// H*CQ warps keeps plan_kernel free of a per-thread popcount-gather and of a
+// cluster-size scratch array.
+//
 __global__ void selected_kv_lengths_kernel(const int *__restrict__ qsz, const int *__restrict__ ksz,
                                            const uint32_t *__restrict__ ub, int *__restrict__ lengths,
                                            int CQ) {
@@ -274,7 +274,7 @@ __global__ void selected_kv_lengths_kernel(const int *__restrict__ qsz, const in
   if (lane == 0) lengths[(size_t)h * CQ + c] = total;
 }
 
-#define PLAN_MAXT 2048   // tasks per head handled by the in-block sort (H3 15 s: CQ=852 -> <=~900 tasks)
+#define PLAN_MAXT 2048   // tasks per head handled by the in-block sort (headroom for C_Q up to about 1000)
 
 __global__ __launch_bounds__(256) void plan_kernel(const int *__restrict__ qsz,
                                                    const int *__restrict__ ksz, int H, int N,
@@ -465,7 +465,7 @@ __device__ __forceinline__ int sp_scan(int v, int *ws, int pt, int &total) {
 __device__ __forceinline__ void reg_alloc232() { asm volatile("setmaxnreg.inc.sync.aligned.u32 216;\n" ::: "memory"); }
 __device__ __forceinline__ void reg_dealloc32() { asm volatile("setmaxnreg.dec.sync.aligned.u32 64;\n" ::: "memory"); }
 
-// QK^T for one 64-row block against the 96-key stage tile: S[48] fp32 accumulators.
+// QK^T for one 64-row block against the KTILE-key stage tile: fp32 accumulators in S.
 __device__ __forceinline__ void qk_block(float (&S)[56], uint64_t dQ, uint64_t dk, int QB) {
   wg_fence();
   WGMMA112_SS(S, dQ, dk, 0);
@@ -480,7 +480,7 @@ __device__ __forceinline__ void qk_block(float (&S)[56], uint64_t dQ, uint64_t d
   wg_wait<0>();
 }
 
-// Online softmax over the 96-key tile for one block; leaves exp values in S (fp32) and packed P.
+// Online softmax over the KTILE-key tile for one block; leaves exp values in S (fp32) and packed P.
 __device__ __forceinline__ void softmax_block(float (&S)[56], uint32_t (&P)[28], float &mA, float &mB,
                                               float &lA, float &lB, float &cA, float &cB, int valid,
                                               int q4, float qk_scale) {
@@ -828,7 +828,7 @@ __global__ __launch_bounds__(NTHREADS, 1) void attn_kernel(
   half *sV = sK + NSTAGE * KSTG;
   uint64_t *bar = (uint64_t *)(sV + NSTAGE * KSTG);
   int *sInt = (int *)(bar + 4 * NSTAGE);
-  int *sGidx = sInt;                 // 2 x 128 ints (96 used per half), 16B aligned
+  int *sGidx = sInt;                 // 2 x 128 ints (KTILE used per half), 16B aligned
   int *sWs = sInt + 256;
   int *sMisc = sInt + 256 + 16;
   int *sSelStart = sInt + 256 + 24;   // <= 1024 merged runs
@@ -1137,7 +1137,7 @@ void launch_cluster_attn(const void *q, const void *kp, const void *vp, const vo
       (const int *)qperm, k_off, (half *)out, (float *)lse, tasks, counters, H, N, CQ,kv_lens);
 }
 
-// Batched cluster-tail correction and production merge. One warpgroup handles
+// Batched per-query residual and merge. One warpgroup handles
 // 64 sorted queries and streams the 2048 centroids in 64-column tiles.
 #define TAIL_Q 128
 #define TAIL_C 64
@@ -1275,7 +1275,7 @@ __global__ __launch_bounds__(256, 2) void tail_wgmma_kernel(
     const unsigned long long mwB = sMask[stage][rowB] >> (2 * q4);
     wg_wait<0>();
 
-    // The reference explicitly rounds gl to fp16 before rowmax and exp.  Round
+    // Scores are rounded to fp16 before the row max and exp, as in selection.  Round
     // two accumulators at a time (cvt.rn.f16x2) instead of one at a time.
 #pragma unroll
     for (int k = 0; k < 16; ++k) {

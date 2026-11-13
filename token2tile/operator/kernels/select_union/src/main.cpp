@@ -72,11 +72,11 @@ void run_split_packed(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("run", &run, "fused rowwise cluster select + tile union");
+    m.def("run", &run, "per-query cluster selection and query-cluster union");
     m.def("run_split", &run_split,
-          "fused virtual layout + rowwise cluster select + tile union");
+          "the same with large query clusters split into sub-tiles");
     m.def("run_packed", &run_packed,
-          "fused rowwise cluster select + packed tile union");
+          "per-query cluster selection and packed query-cluster union");
     m.def("run_split_packed", &run_split_packed,
-          "fused virtual select + direct packed parent union");
+          "the packed variant with large query clusters split");
 }

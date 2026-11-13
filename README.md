@@ -22,8 +22,9 @@
 </p>
 
 Token2Tile is a **training-free sparse attention operator** for video diffusion transformers. It gives a
-**1.48-1.54x end-to-end speedup** over dense FlashAttention-3 on MiniMax-H3 and Wan2.1-14B, and at the same speed
-stays **4.6-6.8 dB closer to the dense video** than block-sparse attention. No training, no model change.
+**1.48-1.54x end-to-end speedup** over dense FlashAttention-3 on MiniMax-H3 and Wan2.1-14B. At comparable speed on
+H3 it stays **5.5-6.8 dB closer to the dense video** than block-sparse attention (SOL, SubBlock); on Wan it is
+4.6-4.8 dB closer than SOL while running faster. No training, no model change.
 
 ## Why it works
 
@@ -33,8 +34,8 @@ Token2Tile keeps both:
 - **Per-query scoring.** Queries and keys are projected into one online rank-32 space fitted to preserve the
   attention logits. Keys are clustered there; every query scores the key clusters with its own vector and keeps the
   best ones up to a token budget.
-- **Per-query residual.** Clusters a query does not select still contribute through their centroid and value sum,
-  merged with the exact part under one softmax.
+- **Per-query residual.** Key clusters outside the union executed by a query's cluster still contribute through
+  their centroid and value sum, weighted by the query's own score and merged with the exact part under one softmax.
 - **Tile execution.** Queries that score alike are clustered; a query cluster executes the union of its members'
   selections as exact attention packed into GPU tiles.
 
@@ -86,8 +87,8 @@ python evaluation/metrics.py pair \
     runs/h3_t2v_dense/lion_s0/video.mp4 runs/h3_t2v_t2t_1p5/lion_s0/video.mp4 metrics.json
 ```
 
-Each request writes `video.mp4`, `perf.json` (the framework's timing; `total_duration_ms` is the request time) and
-the effective `config.json` into its output directory. The harness prints one `CELL_DONE <name> <warm-up s>
+Each request writes `video.mp4`, `perf.json` (the framework's timing; `total_duration_ms` is the request time), the
+effective `config.json`, `cell.json`, `time.txt` and a `DONE` marker into its output directory. The harness prints one `CELL_DONE <name> <warm-up s>
 <wall s> <request s>` line per request.
 
 Other examples: `examples/wan_t2v.json`, `examples/wan_i2v.json`, `examples/h3_i2v.json` (set the image path first).
@@ -106,6 +107,7 @@ Other examples: `examples/wan_t2v.json`, `examples/wan_i2v.json`, `examples/h3_i
 
 | Field | Meaning |
 |---|---|
+| `arm` | Label of the run, recorded in `cell.json`. |
 | `config` | A generation config from `configs/`. |
 | `cells[].name`, `prompt`, `seed`, `output` | One request and its output directory. A finished cell (`DONE` file) is skipped on rerun. |
 | `cells[].request_overrides` | Per-request fields. Wan image-to-video: `{"image_path": ...}`. H3 image-to-video: `{"task": "fl2va", "conditions": [{"type": "image", "uri": ..., "role": "keyframe", "frame_index": 0}]}`. |
@@ -125,7 +127,8 @@ For timing, compare a Token2Tile run with a dense run of the same prompts on the
 | `configs/wan/{t2v,i2v}_t2t_2p5.json` | Wan2.1-14B | 2.5% budget |
 | `configs/wan/{t2v,i2v}_t2t_5.json` | Wan2.1-14B | 5% budget |
 
-All use 50 denoising steps and 8 GPUs with Ulysses sequence parallelism; the first 12 steps run dense attention and
+All use 50 sampling steps (MiniMax-H3 evaluates the denoiser 49 times for its 50-point schedule) and 8 GPUs with
+Ulysses sequence parallelism; the first 12 steps run dense attention and
 the structure is rebuilt every 4 steps. H3 generates 10-second 1344x768 video with audio, Wan 81 frames at 1280x720.
 The budget is the fraction of key tokens each query selects; after unions the executed share of query-key pairs is
 larger. [`docs/configuration.md`](docs/configuration.md) describes every option, how to change the budget, and where the shipped

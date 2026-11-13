@@ -68,7 +68,7 @@ _RUNTIMES: dict[tuple[Any, ...], "_T2TRuntime"] = {}
 
 @dataclass(frozen=True)
 class T2TProfile:
-    """Frozen budget policy for one Wan workload geometry."""
+    """Built-in budget profile for one Wan workload geometry."""
 
     name: str
     num_heads: int
@@ -93,12 +93,12 @@ _WAN_FROZEN_LAYER_PROFILE = (
     0.537588,
 )
 
-# These are the final lossless Phase-C policies, not the earlier error-probe
-# profile.  Auto selection is deliberately exact and fails closed for unknown
-# sequence lengths or denoising schedules.
+# Built-in budget profiles for t2t_profile="auto". A profile is used only when
+# head count, sequence length and step count match exactly; otherwise the
+# backend raises.
 _WAN_PROFILES = {
-    "wan21_t2v_n32760_t50_lossless": T2TProfile(
-        name="wan21_t2v_n32760_t50_lossless",
+    "wan21_t2v_n32760_t50": T2TProfile(
+        name="wan21_t2v_n32760_t50",
         num_heads=12,
         seq_len=32760,
         total_steps=50,
@@ -109,8 +109,8 @@ _WAN_PROFILES = {
         step_profile=_WAN_FROZEN_STEP_PROFILE,
         layer_profile=_WAN_FROZEN_LAYER_PROFILE,
     ),
-    "wan21_t2v_1_3b_n75600_t50_lossless": T2TProfile(
-        name="wan21_t2v_1_3b_n75600_t50_lossless",
+    "wan21_t2v_1_3b_n75600_t50": T2TProfile(
+        name="wan21_t2v_1_3b_n75600_t50",
         num_heads=12,
         seq_len=75600,
         total_steps=50,
@@ -121,8 +121,8 @@ _WAN_PROFILES = {
         step_profile=_WAN_FROZEN_STEP_PROFILE,
         layer_profile=_WAN_FROZEN_LAYER_PROFILE,
     ),
-    "wan21_t2v_14b_n75600_t50_lossless": T2TProfile(
-        name="wan21_t2v_14b_n75600_t50_lossless",
+    "wan21_t2v_14b_n75600_t50": T2TProfile(
+        name="wan21_t2v_14b_n75600_t50",
         num_heads=40,
         seq_len=75600,
         total_steps=50,
@@ -158,7 +158,7 @@ def _batched_whitening_enabled() -> bool:
 
 
 def _batched_eigh(matrix: torch.Tensor):
-    """Batched symmetric eigh with the archived ridge/CPU fallbacks."""
+    """Batched symmetric eigh; retries with a small ridge, then on the CPU."""
     scale = matrix.diagonal(dim1=-2, dim2=-1).mean(dim=-1).clamp_min(1e-12)[:, None, None]
     eye = torch.eye(matrix.shape[-1], dtype=matrix.dtype, device=matrix.device)
     for epsilon in (0.0, 1e-10, 1e-8, 1e-6):
@@ -179,7 +179,7 @@ def _batched_svd(matrix: torch.Tensor):
 
 
 def _batched_online_u(qf: torch.Tensor, kf: torch.Tensor, r: int = 32):
-    """Batched-over-heads version of the archived ``online_u`` whitening:
+    """Batched-over-heads version of ``online_u`` (the projections P_q, P_k):
     Gram -> fp64 eigh -> symmetric sqrt / inv-sqrt -> SVD of Pq^T Pk -> rank-r
     factors.  Identical estimator to ``_h3_online_u`` / ``online_u``; only the
     head loop is replaced by batched linear algebra."""
@@ -355,7 +355,7 @@ class T2TAttentionMetadata(AttentionMetadata):
     warm_iters: int
     mask_refresh: int
     cfg_reuse: bool
-    use_kmm: bool
+    use_kmm: bool  # accepted for compatibility; has no effect
     cache: T2TRequestCache
     # Dense cross-attention receives the same forward-context metadata and
     # uses these two mutable fields exactly like FlashAttentionMetadata.
@@ -460,7 +460,7 @@ def _profile_num_layers(profile: T2TProfile) -> int:
     if profile.num_heads == 56:
         return 50
     raise ValueError(
-        f"No audited Token2Tile layer-profile geometry for H={profile.num_heads}"
+        f"Unsupported head count H={profile.num_heads}: layer counts are known for 12, 40 and 56 heads"
     )
 
 
@@ -515,7 +515,7 @@ def _resolve_profile(
     else:
         if any(value is not None for value in manual_values):
             raise ValueError(
-                "Token2Tile policy overrides require t2t_profile='manual'; audited "
+                "Token2Tile budget keys require t2t_profile='manual'; built-in "
                 "profiles cannot be partially overridden"
             )
         if metadata.profile_name == "auto":
@@ -529,7 +529,7 @@ def _resolve_profile(
             if len(matches) != 1:
                 supported = ", ".join(sorted(_WAN_PROFILES))
                 raise ValueError(
-                    "No unique audited Token2Tile profile for "
+                    "No built-in Token2Tile profile for "
                     f"H={num_heads}, N={seq_len}, steps={metadata.total_steps}. "
                     "Supported: "
                     f"{supported}"
@@ -571,9 +571,9 @@ def _step_window(step: int) -> int:
 
 
 def _layer_bucket(layer_idx: int, profile: T2TProfile) -> int:
-    """Match the archived per-model fractional six-bucket policy exactly."""
-    # The audited Wan profiles cover the 30-layer 1.3B and 40-layer 14B
-    # checkpoints.  Head count uniquely identifies those two architectures.
+    """Layer group of a layer: six groups of nearly equal size."""
+    # The layer count follows from the head count (12 heads -> 30 layers,
+    # 40 heads -> 40 layers).
     num_layers = _profile_num_layers(profile)
     return min(layer_idx * 6 // num_layers, 5)
 
@@ -627,7 +627,7 @@ def _get_runtime(
 ) -> _T2TRuntime:
     # Under Ulysses each rank owns heads/ulysses_degree heads over the full
     # sequence, so the per-rank deploy is built with the local head count while
-    # the audited ns-table geometry is checked against the model's total heads.
+    # the ns-table geometry is checked against the model's total heads.
     total_heads = heads if total_heads is None else int(total_heads)
     ns_table = None
     if metadata.ns_table is not None:
@@ -871,7 +871,7 @@ def _h3_video_tokens_from_layout(used_tokens: int) -> int:
     modality layout the MiniMax-H3 DiT publishes on the forward context.
     Returns 0 when this call is not the main packed document (prompt refiner,
     direct callers) or the video segment is not the contiguous tail that the
-    force-col path assumes."""
+    H3 path assumes."""
     try:
         layout = getattr(get_forward_context(), "minimax_h3_layout", None)
     except AssertionError:
@@ -914,8 +914,8 @@ def _get_h3_runtime(
     heads: int = 28,
     video_tokens: int | None = None,
 ) -> _H3Runtime:
-    """``heads`` = heads per kernel chunk on this rank (28 for the archived
-    single-GPU 2x28 split; 56/ulysses_degree when Ulysses shards heads).
+    """``heads`` = heads per kernel chunk on this rank (28 on a single
+    GPU, where the 56 heads run as two chunks; 56/ulysses_degree when Ulysses shards heads).
     ``video_tokens`` overrides the config constant (auto-derived layout)."""
     cfg = _h3_config()
     video_tokens = cfg["video_tokens"] if video_tokens is None else int(video_tokens)
@@ -936,8 +936,8 @@ def _get_h3_runtime(
         )
         # H3 used-token counts jitter by a few tokens per prompt; accept the
         # table within a small tolerance instead of exact sequence equality.
-        # The archived H3 tables were sealed with the single-GPU 28-head chunk
-        # geometry; the budgets are per (window, layer) and head-agnostic, so
+        # A table may record the per-chunk (28) or the total (56) head count;
+        # the budgets are per (window, layer) and head-agnostic, so
         # any chunking of the same 56-head model is accepted.
         if int(header["heads"]) not in (28, 56) or abs(int(header["seq_len"]) - used_tokens) > 64:
             raise ValueError(
@@ -1031,7 +1031,7 @@ def _get_h3_runtime(
         )
         _H3_RUNTIMES[key] = runtime
         logger.info(
-            "Initialized H3 Token2Tile force-col runtime: heads/chunk=%d used=%d "
+            "Initialized H3 Token2Tile runtime: heads/chunk=%d used=%d "
             "video=%d ctx=%d CQ=%d s=%.4f prefix=%d R=%d cfg_reuse=%s",
             heads,
             used_tokens,
@@ -1060,7 +1060,7 @@ class T2TAttentionImpl(AttentionImpl):
         if causal:
             raise ValueError("Token2Tile does not support causal attention")
         if head_size != 128:
-            raise ValueError("Token2Tile is source-locked to head dimension 128")
+            raise ValueError("Token2Tile kernels require head dimension 128")
         if num_kv_heads not in (None, num_heads):
             raise ValueError("Token2Tile does not support grouped-query attention")
         if not math.isclose(softmax_scale, 1.0 / math.sqrt(128), rel_tol=1e-6):
@@ -1154,9 +1154,9 @@ class T2TAttentionImpl(AttentionImpl):
             )
         cache.call_counts[call_key] = parity + 1
 
-        # SGL's model forward runs under BF16 autocast.  Token2Tile's archived
-        # Triton/CUDA ABI is strictly FP16, including intermediate bmm output,
-        # so fence the complete source-locked region from outer autocast.
+        # SGL's model forward runs under BF16 autocast.  The Token2Tile kernels
+        # take FP16 tensors, including the intermediate bmm outputs, so the
+        # whole call runs outside the outer autocast.
         with torch.autocast(device_type="cuda", enabled=False):
             q = query[0].transpose(0, 1).to(torch.float16).contiguous()
             k = key[0].transpose(0, 1).to(torch.float16).contiguous()
@@ -1176,6 +1176,7 @@ class T2TAttentionImpl(AttentionImpl):
             with torch.cuda.stream(deploy.s_main):
                 deploy.ns_t.copy_(runtime.ns_tensors[ns])
 
+            # With R > 1 the unconditional branch always reuses the conditional snapshot.
             state_key = (self.layer_idx, parity)
             state = cache.states.get(state_key)
             if state is None:
@@ -1215,7 +1216,7 @@ class T2TAttentionImpl(AttentionImpl):
         max_seqlen: int,
         cu_seqlens_host: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
-        """MiniMax-H3 packed [text|audio|video|pad] force-col path."""
+        """MiniMax-H3 path on the packed [text|audio|video|pad] sequence."""
         if self.num_heads != 56:
             return self._dense.forward_varlen(
                 query,
@@ -1266,7 +1267,7 @@ class T2TAttentionImpl(AttentionImpl):
                 cu_seqlens_host=cu_seqlens_host,
             )
         # Ulysses hands each rank 56/ulysses_degree heads over the full packed
-        # sequence.  Keep the archived 28-head kernel chunk when it divides the
+        # sequence.  Use 28-head kernel chunks when 28 divides the
         # local head count; otherwise one chunk of all local heads.
         local_heads = int(query.shape[1])
         ulysses = _ulysses_world_size()
@@ -1362,8 +1363,8 @@ class T2TAttentionImpl(AttentionImpl):
                 state = self._h3_states.get(chunk)
                 sync_init = cfg["sync_init"] and state is None
                 if sync_init:
-                    # first sparse call: host syncs around init/step (as the
-                    # diagnostic profiler does) -- see OPTIMIZATION_RESULTS.md
+                    # diagnostic: host-synchronise around the first sparse call
+                    # (init and step)
                     torch.cuda.synchronize(query.device)
                 if state is None:
                     state = deploy.init_state(

@@ -33,3 +33,21 @@ Each kernel is compiled on first use with `torch.utils.cpp_extension.load` for `
 
 Head dimension 128; 2048 key clusters; Hopper (SM90) only; batch 1; non-causal attention; selector packing assumes
 fewer than 524,288 tokens per rank.
+
+Other entry points in the kernel sources are not used by the operator.
+
+## Names in the paper and in the code
+
+| Paper | Code |
+|---|---|
+| token budget b | `s_frac` (fraction), `ns` / `ns_t` (tokens); configs: `t2t_h3_s_frac`, `t2t_ns_base` |
+| reuse interval R | `mask_refresh`; config `t2t_mask_refresh` |
+| query clusters, C_Q | `CQ`; their sizes are `tile_sizes` / `q_cluster_size` |
+| key clusters, C_K | `C` (2048) |
+| projections P_q, P_k | `Uq`, `Uk` (`online_u`) |
+| centroid scores g_ic | `gl` |
+| per-query residual | `tail` in `tailw` and the `tile_attn` kernel |
+| pinned context keys | `pin_tail` (the trailing keys of the sequence) |
+| value sums s_c | `sumv`, scaled by `lam_s` |
+| structure | snapshot (`_cfg_hold`) |
+| conditional / unconditional branch | `parity` 0 / 1 |

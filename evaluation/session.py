@@ -41,7 +41,7 @@ def main():
     ap.add_argument("plan")
     opts = ap.parse_args()
     plan = json.loads(Path(opts.plan).read_text())
-    if plan.get("skip"):  # plan retired after launch (driver arg lists are fixed)
+    if plan.get("skip"):  # a plan marked "skip": true is ignored
         print("SESSION_SKIPPED", opts.plan, flush=True)
         return
     config = Path(plan["config"])
@@ -93,7 +93,7 @@ def main():
             )
             params.update(cell.get("request_overrides", {}))  # e.g. I2V: task + keyframe conditions
             # Explicit untimed warmup: copy of the identical request (default), or of the
-            # previous cell's request (plan warmup='previous': cross-prompt persisted state).
+            # previous cell's request (plan warmup='previous').
             warm_params = params
             if plan.get("warmup") == "previous" and prev_params is not None:
                 warm_params = dict(prev_params, request_id=generate_request_id(), output_path=str(dest / "_warm_prev"), perf_dump_path=str(dest / "_warm_prev" / "perf.json"))
@@ -104,8 +104,7 @@ def main():
             req = prepare_request(server_args=server, sampling_params=sp)
             sp.prepare_video_request_for_queue(req)
             warm_start = time.perf_counter()
-            # plan warmup='none': quality runs skip the per-cell warmup (burn-in cells still warm up);
-            # speed is validated separately on warmed-up subsets.
+            # plan warmup='none': skip the per-cell warm-up; cells marked burnin still warm up.
             skip_warm = plan.get("warmup") == "none" and not cell.get("burnin")
             try:
                 if skip_warm:

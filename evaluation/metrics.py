@@ -2,8 +2,8 @@
 PSNR from the mean per-frame MSE, skimage SSIM with data_range=255) and LPIPS (alex, frame mean,
 [-1,1] input).
 
-usage: metrics.py watch ROOT   -- loop until every run cell with a dense partner is scored
-       metrics.py pair REF CAND OUT
+usage: metrics.py pair REF CAND OUT
+       metrics.py watch ROOT   -- batch mode for ROOT/runs/<node>/<arm>/<cell>/ with the dense arm named "dense"
 """
 import hashlib
 import itertools

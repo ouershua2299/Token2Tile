@@ -82,7 +82,6 @@
    0.3,
    0.39999999999999997
   ],
-  "t2t_use_kmm": true,
   "t2t_warm_iters": 4,
   "t2t_fast_init": true
  }

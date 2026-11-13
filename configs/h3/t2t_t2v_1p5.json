@@ -22,7 +22,6 @@
    0.25517241379310346,
    0.25517241379310346
   ],
-  "t2t_use_kmm": false,
   "t2t_warm_iters": 4,
   "t2t_batched_whitening": true,
   "t2t_persist_state": false,

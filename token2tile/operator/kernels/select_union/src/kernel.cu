@@ -441,7 +441,7 @@ __global__ void __launch_bounds__(TPB, 8) k_expand(unsigned char* __restrict__ u
 
 // k_main already accumulates the selected-cluster state as two 8-bit masks
 // per thread.  Publish those masks as the final LSB-first int32 bitmap rather
-// than expanding them to 2048 byte flags only for pack_uni to reconstruct the
+// than expanding them to 2048 byte flags and packing those again into the
 // same 64 words.  In split mode the virtual-tile masks are OR-folded here,
 // directly from the partials, so no expanded virtual or parent union exists.
 template <bool SPLIT>
