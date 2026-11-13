@@ -82,9 +82,7 @@ the budget averaged over the sparse steps is slightly below the nominal one: 1.3
 for 1.25%, 2.23-2.28% for the 2.5% Wan configs, 4.93% for the 5% Wan configs and 4.48% for the 5% H3 config. The names of the configs and the
 budgets quoted with the results are the nominal values.
 
-**H3 at 5%.** `h3/t2t_5.json` serves both text-to-video and image-to-video. The 5% H3 results in the paper were
-measured with a build of the tile kernel that accumulates in FP32; this repository ships the FP16 kernel, which is
-slightly faster at this budget and stays within about 0.3 dB PSNR of those results.
+**H3 at 5%.** `h3/t2t_5.json` serves both text-to-video and image-to-video.
 
 ## Request settings
 
