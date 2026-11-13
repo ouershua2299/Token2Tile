@@ -144,6 +144,7 @@ For timing, compare a Token2Tile run with a dense run of the same prompts on the
 | `configs/h3/dense.json` | MiniMax-H3 | dense FlashAttention-3 |
 | `configs/h3/t2t_t2v_1p5.json` | MiniMax-H3 text-to-video | 1.5% budget |
 | `configs/h3/t2t_i2v_1p25.json` | MiniMax-H3 image-to-video | 1.25% budget |
+| `configs/h3/t2t_5.json` | MiniMax-H3, both tasks | 5% budget |
 | `configs/wan/{t2v,i2v}_dense.json` | Wan2.1-14B | dense FlashAttention-3 |
 | `configs/wan/{t2v,i2v}_t2t_2p5.json` | Wan2.1-14B | 2.5% budget |
 | `configs/wan/{t2v,i2v}_t2t_5.json` | Wan2.1-14B | 5% budget |
@@ -151,7 +152,8 @@ For timing, compare a Token2Tile run with a dense run of the same prompts on the
 All use 50 denoising steps and 8 GPUs with Ulysses sequence parallelism; the first 12 steps run dense attention and
 the structure is rebuilt every 4 steps. H3 generates 10-second 1344x768 video with audio, Wan 81 frames at 1280x720.
 The budget is the fraction of key tokens each query selects; after unions the executed share of query-key pairs is
-larger. [`docs/configuration.md`](docs/configuration.md) describes every option and how to change the budget.
+larger. [`docs/configuration.md`](docs/configuration.md) describes every option, how to change the budget, and where the shipped
+settings come from.
 
 ## Using the operator directly
 

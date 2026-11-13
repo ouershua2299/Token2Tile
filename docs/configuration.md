@@ -49,6 +49,43 @@ Text and audio tokens are packed with the video tokens. Their query rows use den
 reserved key cluster that every video query attends to exactly. For image-to-video, `t2t_h3_cond_mode: "sparse"`
 lets the keyframe rows go through the sparse operator.
 
+## Where the shipped settings come from
+
+**Fixed choices.** The kernels fix the head dimension (128) and the number of key clusters (2048); the low-rank
+space has rank 32. Query clusters hold about 128 queries each: `"auto"` gives roughly N/128 clusters on H3, and Wan
+at 720p uses 512. The first 12 denoising steps stay dense and the structure is rebuilt every 4 steps
+(`t2t_dense_prefix_steps`, `t2t_mask_refresh`); both were chosen in the H3 ablations of the paper and are used
+unchanged on Wan.
+
+**Step profile.** The four multipliers in `t2t_step_profile` come from an offline calibration that is not part of
+this repository:
+
+1. One calibration request per model and task is denoised with dense attention. At one probe step in each window
+   (steps 17, 25, 37 and 45), the denoiser is replayed with sparse attention at eleven budgets from 0.5% to 12.5%,
+   and the squared error of its output against the dense output is recorded. This gives an error curve per window.
+2. For a target budget, dynamic programming picks one grid budget per window that minimises the summed error,
+   weighting the windows by their lengths (12, 8, 12 and the remaining steps), such that the length-weighted mean
+   does not exceed the target; the result is then scaled so that the mean equals the target.
+3. The multipliers are the window budgets divided by the target budget.
+
+| Config | Window budgets (%) | Source |
+|---|---|---|
+| `h3/t2t_i2v_1p25.json` | 2.0 / 1.0 / 0.75 / 1.0 | Calibration on H3 image-to-video, target 1.25% |
+| `wan/t2v_t2t_2p5.json` | 5.0 / 2.0 / 1.0 / 1.0 | Calibration on Wan text-to-video, target 2.5% |
+| `wan/i2v_t2t_2p5.json` | 5.0 / 2.5 / 0.75 / 1.0 | Calibration on Wan image-to-video, target 2.5% |
+| `wan/{t2v,i2v}_t2t_5.json` | 7.5 / 5.0 / 2.5 / 5.0 | Calibration on Wan, target 5% (the same result for both tasks) |
+| `h3/t2t_t2v_1p5.json`, `h3/t2t_5.json` | ratio 8 : 4 : 1 : 1 | A fixed schedule from earlier H3 experiments, scaled to the target budget; it is not the calibration result for these budgets |
+
+**Window boundaries.** The backend applies the four multipliers to denoising steps 13-21, 22-31, 32-41 and 42 to
+the end (1-based, after the 12 dense steps). The calibration weighted the windows as 12, 8, 12 and 5-6 steps, so
+the budget averaged over the sparse steps is slightly below the nominal one: 1.34% for the 1.5% H3 config, 1.18%
+for 1.25%, 2.23-2.28% for the 2.5% Wan configs, 4.93% for the 5% Wan configs and 4.48% for the 5% H3 config. The names of the configs and the
+budgets quoted with the results are the nominal values.
+
+**H3 at 5%.** `h3/t2t_5.json` serves both text-to-video and image-to-video. The 5% H3 results in the paper were
+measured with a build of the tile kernel that accumulates in FP32; this repository ships the FP16 kernel, which is
+slightly faster at this budget and stays within about 0.3 dB PSNR of those results.
+
 ## Request settings
 
 Model, resolution, frame count, steps, guidance and parallelism (`num_gpus`, `ulysses_degree`) are standard
